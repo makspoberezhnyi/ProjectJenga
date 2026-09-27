@@ -120,6 +120,9 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
   let switched = false;
   // Switch hand
   if (input.yPressed) {
+    const oldHand = hands[activeHandIndex];
+    oldHand.targetPos.copyFrom(oldHand.aggregate.transformNode.position);
+    
     activeHandIndex = (activeHandIndex + 1) % hands.length;
     releaseGrip(); // Let go when switching
     switched = true;
@@ -176,9 +179,11 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
     
     if (i === activeHandIndex) {
       // Active hand has full physics collisions enabled
+      hand.aggregate.shape.filterMembershipMask = 0xFFFFFFFF;
       hand.aggregate.shape.filterCollideMask = 0xFFFFFFFF;
     } else {
       // Inactive hand has physics collisions disabled ("no physics on it")
+      hand.aggregate.shape.filterMembershipMask = 0;
       hand.aggregate.shape.filterCollideMask = 0;
     }
     
@@ -205,6 +210,13 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
   for (const hand of hands) {
     const isAct = (hand === activeHand);
     
+    if (!isAct) {
+      // Frozen: no physics
+      hand.aggregate.body.setLinearVelocity(Vector3.Zero());
+      hand.aggregate.body.setAngularVelocity(Vector3.Zero());
+      continue;
+    }
+    
     // Current state
     const pos = hand.aggregate.transformNode.position;
     const vel = hand.aggregate.body.getLinearVelocity();
@@ -218,10 +230,8 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
     
     // Cap the force
     let maxF = config.hands.baseMoveForce;
-    if (isAct) {
-      if (input.r2 > 0.1 && activeHandIndex === 0) maxF += input.r2 * config.hands.maxPushForce;
-      if (input.l2 > 0.1 && activeHandIndex === 1) maxF += input.l2 * config.hands.maxPushForce;
-    }
+    if (input.r2 > 0.1 && activeHandIndex === 0) maxF += input.r2 * config.hands.maxPushForce;
+    if (input.l2 > 0.1 && activeHandIndex === 1) maxF += input.l2 * config.hands.maxPushForce;
     
     if (force.length() > maxF) {
       force = force.normalize().scale(maxF);
