@@ -1,4 +1,4 @@
-import { Scene, Mesh, MeshBuilder, Vector3, PhysicsAggregate, PhysicsShapeType, StandardMaterial, Color3, Physics6DoFConstraint, PhysicsConstraintAxis, Ray, SceneLoader, TransformNode, ArcRotateCamera } from "@babylonjs/core";
+import { Scene, Mesh, MeshBuilder, Vector3, PhysicsAggregate, PhysicsShapeType, StandardMaterial, Color3, Physics6DoFConstraint, PhysicsConstraintAxis, Ray, SceneLoader } from "@babylonjs/core";
 import "@babylonjs/loaders";
 import { config } from "../config";
 import { InputState } from "../input/gamepad";
@@ -12,7 +12,7 @@ export interface Hand {
   side: number;
   animGroups: any[];
   marker: Mesh;
-  rotator: TransformNode;
+  baseZ: number;
 }
 
 let hands: Hand[] = [];
@@ -43,22 +43,17 @@ export async function initHands(scene: Scene) {
     // Create a dummy small sphere for precise physics collision (fingertip size)
     const physicsMesh = MeshBuilder.CreateSphere(`physicsHand_${i}`, { diameter: 0.5 }, scene);
     physicsMesh.isVisible = false;
-    
-    const rotatorNode = new TransformNode(`rotator_${i}`, scene);
-    rotatorNode.parent = physicsMesh;
 
-    // Attach the visual hand to the rotator
-    rootNode.parent = rotatorNode;
+    // Attach the visual hand to the physics dummy
+    rootNode.parent = physicsMesh;
     rootNode.scaling = new Vector3(15, 15, 15);
-    // Natively the hand's fingers point DOWN (-Y) and the palm faces FORWARD (+Z).
-    // We must clear the GLB's native rotationQuaternion and apply Euler angles.
-    // X = -90 degrees (-Math.PI/2) pitches fingers to point FORWARD (+Z) and palm UP (+Y).
-    // Z = 180 degrees (Math.PI) rolls the hand to point palm DOWN (-Y).
-    rootNode.rotationQuaternion = null;
-    rootNode.rotation = new Vector3(-Math.PI / 2, 0, Math.PI);
     
-    // We push the wrist back to -2.5 so the fingertips sit at the physics sphere (0,0,0)
-    rootNode.position = new Vector3(0, -0.5, -2.5);
+    // Adjust visual offset so the "pointing finger" aligns with the physics sphere.
+    // The GLB origin is at the wrist. We need to push the visual mesh back
+    // so the fingertips sit perfectly inside the physics sphere.
+    // Since the mesh is scaled by 15, a typical 20cm hand becomes ~3 units long.
+    // We push it back along the Z axis (away from the tower) depending on which side it is.
+    rootNode.position = new Vector3(0, -0.5, side * 2.5); 
     
     // Apply a skin-like color to all sub-meshes
     const skinMat = new StandardMaterial(`skin_${i}`, scene);
@@ -69,12 +64,14 @@ export async function initHands(scene: Scene) {
       m.material = skinMat;
     });
 
-    // If it's the left hand (side = -1), mirror it visually
+    // If it's the right hand (side = -1), mirror it visually
     if (side === -1) {
       rootNode.scaling.x *= -1;
+      rootNode.rotation = new Vector3(0, 0, 0); 
+    } else {
+      rootNode.rotation = new Vector3(0, Math.PI, 0); 
     }
     
-    // Initial position away from the tower
     const startPos = new Vector3(0, 10, side * 7);
     physicsMesh.position.copyFrom(startPos);
     
@@ -108,7 +105,7 @@ export async function initHands(scene: Scene) {
       side,
       animGroups: instance.animationGroups,
       marker,
-      rotator: rotatorNode
+      baseZ: 6.5
     });
   }
 }
@@ -135,34 +132,22 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
   
 
   
-  // 1. Stick exclusively for Horizontal controls (Camera relative)
-  const cam = scene.activeCamera as ArcRotateCamera;
-  const forward = cam.getDirection(Vector3.Forward());
-  forward.y = 0;
-  forward.normalize();
-  
-  const right = cam.getDirection(Vector3.Right());
-  right.y = 0;
-  right.normalize();
-
-  // Stick UP (negative leftStick.y) means move FORWARD (towards the tower if camera looks at it)
-  const moveForward = -input.leftStick.y * config.hands.speed * dt;
-  const moveRight = input.leftStick.x * config.hands.speed * dt;
-  
-  activeHand.targetPos.addInPlace(forward.scale(moveForward));
-  activeHand.targetPos.addInPlace(right.scale(moveRight));
+  // 1. Stick exclusively for Horizontal controls (X and Z)
+  activeHand.targetPos.x += input.leftStick.x * config.hands.speed * dt * -activeHand.side;
+  // Stick UP (negative Y) moves the hand FORWARD (towards the tower)
+  activeHand.targetPos.z += input.leftStick.y * config.hands.speed * dt * activeHand.side;
   
   // 2. D-pad exclusively for Vertical controls (Y)
   // D-pad UP (negative Y) moves the hand UP (positive Y in world)
+  // Adjusted speed multiplier slightly higher per user request
   const dpadSpeed = config.hands.speed * 0.5;
   activeHand.targetPos.y -= input.dpad.y * dpadSpeed * dt;
-
   
   if (activeHandIndex === 0) {
     // ---- PUSH HAND (Green marker, R2) ----
     // R2 can still be used for a quick lunge forward if desired
     if (input.r2 > 0.1) {
-      activeHand.targetPos.addInPlace(forward.scale(5.0 * input.r2 * config.hands.speed * dt));
+      activeHand.targetPos.z -= 5.0 * input.r2 * config.hands.speed * dt * activeHand.side;
     }
     if (activeConstraint) releaseGrip();
     
@@ -214,19 +199,6 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
         mat.alpha = 0.3;
       }
     }
-    
-    // Auto-targeting: Empty hands always point their fingers at the tower
-    const isHoldingBlock = (i === activeHandIndex && activeConstraint !== null);
-    if (!isHoldingBlock) {
-      // Look at the tower center (0, y, 0)
-      // Since fingertips are pushed to -2.5 and +Z points outward natively,
-      // setting lookAt to the tower will perfectly aim the fingers at the tower!
-      const towerCenter = new Vector3(0, hand.aggregate.transformNode.position.y, 0);
-      hand.rotator.lookAt(towerCenter);
-    } else {
-      // If holding a block, it just maintains its world rotation from when it was grabbed.
-      // (The constraint locks it to the dummy sphere which doesn't rotate).
-    }
   }
 
   // Apply spring force to all hands
@@ -263,9 +235,9 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
 
 function tryGrip(scene: Scene, hand: Hand) {
   // We do a raycast inwards towards the tower to find a block.
-  // We shoot the ray in the direction the hand is currently pointing (Forward).
+  // Using a 5.0 unit length to ensure it reaches the tower from the resting distance (6.5).
   const rayStart = hand.mesh.position;
-  const rayDir = hand.rotator.getDirection(Vector3.Forward());
+  const rayDir = new Vector3(0, 0, -hand.side);
   const hit = scene.pickWithRay(new Ray(rayStart, rayDir, 5.0), (mesh) => mesh.name.startsWith("block_"));
   
   if (hit && hit.hit && hit.pickedMesh && hit.pickedMesh.physicsBody) {
@@ -315,9 +287,6 @@ function releaseGrip() {
     // Check if the block was placed on top of the tower
     if (grabbedBody.transformNode) {
       const blockPos = grabbedBody.transformNode.getAbsolutePosition();
-      // If the block is dropped significantly higher than the initial tower height
-      // The initial tower is 18 levels * 1.5 height + some gap = roughly 28 units high.
-      // Let's say if y > 25, it was placed on top (or at least dropped from above).
       if (blockPos.y > 25) {
         nextTurn(GameState.isMultiplayer);
       }

@@ -58,7 +58,6 @@ export async function createScene(canvas: HTMLCanvasElement): Promise<Scene> {
     
     if (GameState.isPlaying) {
       const switched = updateHands(scene, state, engine.getDeltaTime());
-      
       if (switched) {
         camera.alpha += Math.PI;
       }
