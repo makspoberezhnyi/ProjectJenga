@@ -50,11 +50,11 @@ export async function initHands(scene: Scene) {
     // Attach the visual hand to the rotator
     rootNode.parent = rotatorNode;
     rootNode.scaling = new Vector3(15, 15, 15);
-    
-    // Natively the hand points towards +Z. 
-    // We must clear the GLB's native rotationQuaternion to fix the 90-degree pitch
+    // Natively the hand's fingers point UP (+Y) and the palm faces FORWARD (+Z).
+    // We must clear the GLB's native rotationQuaternion and pitch it forward 90 degrees
+    // so the fingers point FORWARD (+Z) and the palm faces DOWN (-Y).
     rootNode.rotationQuaternion = null;
-    rootNode.rotation = new Vector3(0, 0, 0);
+    rootNode.rotation = new Vector3(Math.PI / 2, 0, 0);
     
     // We push the wrist back to -2.5 so the fingertips sit at the physics sphere (0,0,0)
     rootNode.position = new Vector3(0, -0.5, -2.5);
@@ -161,7 +161,7 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
     // ---- PUSH HAND (Green marker, R2) ----
     // R2 can still be used for a quick lunge forward if desired
     if (input.r2 > 0.1) {
-      activeHand.targetPos.z -= 5.0 * input.r2 * config.hands.speed * dt * activeHand.side;
+      activeHand.targetPos.addInPlace(forward.scale(5.0 * input.r2 * config.hands.speed * dt));
     }
     if (activeConstraint) releaseGrip();
     
@@ -262,9 +262,9 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
 
 function tryGrip(scene: Scene, hand: Hand) {
   // We do a raycast inwards towards the tower to find a block.
-  // Using a 5.0 unit length to ensure it reaches the tower from the resting distance (6.5).
+  // We shoot the ray in the direction the hand is currently pointing (Forward).
   const rayStart = hand.mesh.position;
-  const rayDir = new Vector3(0, 0, -hand.side);
+  const rayDir = hand.rotator.getDirection(Vector3.Forward());
   const hit = scene.pickWithRay(new Ray(rayStart, rayDir, 5.0), (mesh) => mesh.name.startsWith("block_"));
   
   if (hit && hit.hit && hit.pickedMesh && hit.pickedMesh.physicsBody) {
