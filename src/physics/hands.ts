@@ -1,4 +1,5 @@
-import { Scene, Mesh, MeshBuilder, Vector3, PhysicsAggregate, PhysicsShapeType, StandardMaterial, Color3, Color4, Physics6DoFConstraint, PhysicsConstraintAxis, Ray } from "@babylonjs/core";
+import { Scene, Mesh, MeshBuilder, Vector3, PhysicsAggregate, PhysicsShapeType, StandardMaterial, Color3, Physics6DoFConstraint, PhysicsConstraintAxis, Ray, SceneLoader } from "@babylonjs/core";
+import "@babylonjs/loaders";
 import { config } from "../config";
 import { InputState } from "../input/gamepad";
 
@@ -15,66 +16,46 @@ let marker: any;
 let activeConstraint: Physics6DoFConstraint | null = null;
 let grabbedBody: any = null;
 
-function createArmMesh(scene: Scene, name: string, side: number, material: StandardMaterial): Mesh {
-  // Forearm
-  const forearm = MeshBuilder.CreateCylinder(name + "_forearm", { diameter: 0.6, height: 3 }, scene);
-  forearm.rotation.x = Math.PI / 2;
-  // Push forearm back so the hand is at z=0
-  forearm.position.z = side * 1.5;
-
-  // Palm
-  const palm = MeshBuilder.CreateBox(name + "_palm", { width: 0.8, height: 0.4, depth: 0.8 }, scene);
-  palm.position.z = side * 0; // Center
-
-  // Thumb
-  const thumb = MeshBuilder.CreateBox(name + "_thumb", { width: 0.3, height: 0.3, depth: 0.6 }, scene);
-  thumb.position.x = 0.5;
-  thumb.position.z = side * -0.2;
-
-  // Fingers
-  const f1 = MeshBuilder.CreateBox(name + "_f1", { width: 0.2, height: 0.2, depth: 0.8 }, scene);
-  f1.position.x = -0.3;
-  f1.position.z = side * -0.6;
-  
-  const f2 = MeshBuilder.CreateBox(name + "_f2", { width: 0.2, height: 0.2, depth: 0.8 }, scene);
-  f2.position.x = 0;
-  f2.position.z = side * -0.6;
-  
-  const f3 = MeshBuilder.CreateBox(name + "_f3", { width: 0.2, height: 0.2, depth: 0.8 }, scene);
-  f3.position.x = 0.3;
-  f3.position.z = side * -0.6;
-
-  const merged = Mesh.MergeMeshes([forearm, palm, thumb, f1, f2, f3], true, true, undefined, false, true) as Mesh;
-  merged.name = name;
-  merged.material = material;
-  
-  merged.enableEdgesRendering();
-  merged.edgesWidth = 3.0;
-  merged.edgesColor = new Color4(0, 0, 0, 1);
-  
-  return merged;
-}
-
-export function initHands(scene: Scene) {
+export async function initHands(scene: Scene) {
   hands = [];
   
-  const handMat = new StandardMaterial("handMat", scene);
-  handMat.diffuseColor = new Color3(0.2, 0.5, 1.0); // Blue
-  handMat.emissiveColor = new Color3(0.1, 0.2, 0.4);
-  handMat.alpha = 0.8; // Semi-transparent (less transparent to look solid)
+  // Load the hand model
+  let leftHandMesh: Mesh;
+  try {
+    const result = await SceneLoader.ImportMeshAsync("", "/models/", "left_hand.glb", scene);
+    leftHandMesh = result.meshes[0] as Mesh;
+    // Normalize scale and rotation based on the glb
+    leftHandMesh.scaling = new Vector3(8, 8, 8); // Make it sizable
+    // Depending on the model, it might need rotation to point forward
+    leftHandMesh.rotationQuaternion = null;
+    leftHandMesh.rotation = new Vector3(0, Math.PI, 0); 
+  } catch (e) {
+    console.error("Could not load hand model, falling back to box", e);
+    leftHandMesh = MeshBuilder.CreateBox("fallbackHand", { width: 1.5, height: 1.5, depth: 3 }, scene);
+  }
+
+  // Remove it from scene to use as a template
+  leftHandMesh.setEnabled(false);
 
   // Two hands on opposite sides (Z-axis)
   for (let i = 0; i < 2; i++) {
     const side = i === 0 ? 1 : -1;
     
-    // Create cartoony arm
-    const mesh = createArmMesh(scene, `hand_${i}`, side, handMat);
+    // Clone the hand template
+    const mesh = leftHandMesh.clone(`hand_${i}`, null) as Mesh;
+    mesh.setEnabled(true);
+    
+    // If it's the right hand (side = -1), mirror it
+    if (side === -1) {
+      mesh.scaling.x *= -1; // Mirror to make a right hand
+      mesh.rotation.y = 0; // Point to the other direction
+    }
     
     // Start position slightly away from the tower
     const startPos = new Vector3(0, 10, side * 7);
     mesh.position.copyFrom(startPos);
     
-    // We can use a box shape for the physics of the hand
+    // Use a box shape for the physics of the hand
     const aggregate = new PhysicsAggregate(mesh, PhysicsShapeType.BOX, {
       mass: config.hands.handMass,
       friction: 0.5,
@@ -83,6 +64,12 @@ export function initHands(scene: Scene) {
     
     // Disable gravity for hands so they don't fall
     aggregate.body.setGravityFactor(0);
+    
+    // Lock rotation so it doesn't spin wildly when bumping into things
+    aggregate.body.setMassProperties({
+      mass: config.hands.handMass,
+      inertia: new Vector3(0, 0, 0)
+    });
 
     hands.push({
       mesh,
@@ -93,7 +80,7 @@ export function initHands(scene: Scene) {
   }
 
   // Create target marker
-  marker = MeshBuilder.CreateSphere("marker", { diameter: 0.3 }, scene);
+  marker = MeshBuilder.CreateSphere("marker", { diameter: 0.5 }, scene);
   const markerMat = new StandardMaterial("markerMat", scene);
   markerMat.diffuseColor = new Color3(0, 1, 0);
   markerMat.emissiveColor = new Color3(0, 1, 0);

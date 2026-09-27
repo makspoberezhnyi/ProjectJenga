@@ -20,12 +20,12 @@ export const config = {
     showPhysics: false
   },
   hands: {
-    stiffness: 400,
-    damping: 20,
-    maxPushForce: 20,
-    gripStrength: 100, // Not fully used yet, but good for constraint
-    handMass: 0.1,
-    baseMoveForce: 5,
-    speed: 10 // target move speed
+    stiffness: 800, // Stronger spring
+    damping: 40,
+    maxPushForce: 500, // Massive push force
+    gripStrength: 500,
+    handMass: 10, // Heavier hand so it doesn't bounce off easily
+    baseMoveForce: 50,
+    speed: 10
   }
 };
