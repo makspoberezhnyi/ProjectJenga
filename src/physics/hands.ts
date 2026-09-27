@@ -251,6 +251,22 @@ function tryGrip(scene: Scene, hand: Hand) {
   const hit = scene.pickWithRay(new Ray(rayStart, rayDir, 5.0), (mesh) => mesh.name.startsWith("block_"));
   
   if (hit && hit.hit && hit.pickedMesh && hit.pickedMesh.physicsBody) {
+    // Prohibit moving blocks from the top 3 levels
+    let maxY = -1000;
+    scene.meshes.forEach(m => {
+      if (m.name.startsWith("block_") && m.absolutePosition.y > maxY) {
+        maxY = m.absolutePosition.y;
+      }
+    });
+    
+    // config.tower.blockSize.height = 1.5. 3 levels = 4.5. Add 0.5 buffer.
+    const prohibitedThreshold = maxY - (1.5 * 3) + 0.5;
+    
+    if (hit.pickedMesh.absolutePosition.y >= prohibitedThreshold) {
+      // Show visual feedback that it's prohibited? For now just return
+      return;
+    }
+    
     grabbedBody = hit.pickedMesh.physicsBody;
     
     // Convert hand world position to block local space for pivotB

@@ -9,6 +9,8 @@ export interface InputState {
   aPressed: boolean;
   l1Pressed: boolean;
   r1Pressed: boolean;
+  l1Held: boolean;
+  r1Held: boolean;
 }
 
 const state: InputState = {
@@ -21,7 +23,9 @@ const state: InputState = {
   bPressed: false,
   aPressed: false,
   l1Pressed: false,
-  r1Pressed: false
+  r1Pressed: false,
+  l1Held: false,
+  r1Held: false
 };
 
 // Keyboard fallback keys
@@ -122,6 +126,9 @@ export function updateInput(): InputState {
   const currR1 = state.r1Pressed;
   state.r1Pressed = currR1 && !lastR1;
   lastR1 = currR1;
+
+  state.l1Held = currL1;
+  state.r1Held = currR1;
 
   return state;
 }

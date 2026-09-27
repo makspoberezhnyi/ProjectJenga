@@ -45,3 +45,20 @@ export function hideGameUI() {
   const layer = document.getElementById("uiLayer");
   if (layer) layer.innerHTML = "";
 }
+
+export function showGameOver() {
+  const layer = document.getElementById("uiLayer");
+  if (!layer) return;
+
+  layer.innerHTML = `
+    <div style="background: rgba(255, 0, 0, 0.9); padding: 40px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); pointer-events: auto; text-align: center; border: 4px solid black; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">
+      <h1 style="font-size: 64px; margin-top: 0; color: white; text-shadow: 2px 2px 0px #000;">GAME OVER</h1>
+      <h2 style="color: white; margin-bottom: 30px;">Tower Collapsed!</h2>
+      <button id="btnRestart" style="display: block; width: 250px; margin: 15px auto; padding: 15px; font-size: 24px; font-family: inherit; font-weight: bold; background: #fff; border: 3px solid black; border-radius: 10px; cursor: pointer; transition: transform 0.1s;">Restart</button>
+    </div>
+  `;
+
+  document.getElementById("btnRestart")?.addEventListener("click", () => {
+    window.location.reload();
+  });
+}

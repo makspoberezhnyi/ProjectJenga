@@ -62,6 +62,20 @@ export async function createScene(canvas: HTMLCanvasElement): Promise<Scene> {
       if (switched) {
         camera.alpha += Math.PI;
       }
+      
+      // Check for Game Over (tower collapse)
+      let fallenBlocks = 0;
+      scene.meshes.forEach(m => {
+        if (m.name.startsWith("block_") && m.absolutePosition.y < 1.5) {
+          fallenBlocks++;
+        }
+      });
+      // 3 blocks normally sit at the bottom. If more than 4, at least 2 fell.
+      if (fallenBlocks > 4) {
+        GameState.isPlaying = false;
+        import("../ui/gameUi").then(ui => ui.showGameOver());
+      }
+      
     } else {
       updateMenuInput(state);
     }
@@ -73,8 +87,15 @@ export async function createScene(canvas: HTMLCanvasElement): Promise<Scene> {
     // Clamp beta to prevent flipping or going below ground
     camera.beta = Math.max(0.1, Math.min(Math.PI / 2 - 0.1, camera.beta));
 
-
-
+    // Camera zoom with L1 / R1
+    if (state.l1Held) {
+      camera.radius += 0.5; // Zoom out
+    }
+    if (state.r1Held) {
+      camera.radius -= 0.5; // Zoom in
+    }
+    camera.radius = Math.max(15, Math.min(100, camera.radius));
+    
     scene.render();
   });
 
