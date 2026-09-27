@@ -20,12 +20,12 @@ export const config = {
     showPhysics: false
   },
   hands: {
-    stiffness: 800, // Stronger spring
-    damping: 40,
-    maxPushForce: 500, // Massive push force
-    gripStrength: 500,
-    handMass: 10, // Heavier hand so it doesn't bounce off easily
-    baseMoveForce: 50,
-    speed: 10
+    stiffness: 400,
+    damping: 40, // Critically damped for mass 1.0
+    maxPushForce: 50, // (No longer used directly but kept for slider)
+    gripStrength: 100,
+    handMass: 1.0,
+    baseMoveForce: 20, // (No longer used)
+    speed: 15
   }
 };

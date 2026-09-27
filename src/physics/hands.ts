@@ -9,11 +9,11 @@ export interface Hand {
   targetPos: Vector3;
   side: number;
   animGroups: any[];
+  marker: Mesh;
 }
 
 let hands: Hand[] = [];
 let activeHandIndex = 0;
-let marker: any;
 let activeConstraint: Physics6DoFConstraint | null = null;
 let grabbedBody: any = null;
 
@@ -37,10 +37,28 @@ export async function initHands(scene: Scene) {
     const rootNode = instance.rootNodes[0] as Mesh;
     rootNode.name = `hand_${i}`;
     
-    // Scale up
-    rootNode.scaling = new Vector3(12, 12, 12);
+    // Create a dummy small sphere for precise physics collision (fingertip size)
+    const physicsMesh = MeshBuilder.CreateSphere(`physicsHand_${i}`, { diameter: 0.5 }, scene);
+    physicsMesh.isVisible = false;
+
+    // Attach the visual hand to the physics dummy
+    rootNode.parent = physicsMesh;
+    rootNode.scaling = new Vector3(15, 15, 15);
     
-    // If it's the right hand (side = -1), mirror it
+    // Adjust visual offset so the "pointing finger" aligns with the physics sphere
+    // These offsets depend on the glb's origin. Assuming we need to push it back and down slightly.
+    rootNode.position = new Vector3(0, -0.5, 0); 
+    
+    // Apply a skin-like color to all sub-meshes
+    const skinMat = new StandardMaterial(`skin_${i}`, scene);
+    skinMat.diffuseColor = new Color3(0.9, 0.7, 0.5); 
+    skinMat.specularColor = new Color3(0.1, 0.1, 0.1);
+    
+    rootNode.getChildMeshes().forEach(m => {
+      m.material = skinMat;
+    });
+
+    // If it's the right hand (side = -1), mirror it visually
     if (side === -1) {
       rootNode.scaling.x *= -1;
       rootNode.rotation = new Vector3(0, 0, 0); 
@@ -49,9 +67,10 @@ export async function initHands(scene: Scene) {
     }
     
     const startPos = new Vector3(0, 10, side * 7);
-    rootNode.position.copyFrom(startPos);
+    physicsMesh.position.copyFrom(startPos);
     
-    const aggregate = new PhysicsAggregate(rootNode, PhysicsShapeType.BOX, {
+    // Physics aggregate is firmly attached to the 0.5m sphere!
+    const aggregate = new PhysicsAggregate(physicsMesh, PhysicsShapeType.SPHERE, {
       mass: config.hands.handMass,
       friction: 0.5,
       restitution: 0
@@ -68,21 +87,20 @@ export async function initHands(scene: Scene) {
       ag.stop();
     }
 
+    const marker = MeshBuilder.CreateSphere(`marker_${i}`, { diameter: 0.5 }, scene);
+    const markerMat = new StandardMaterial(`markerMat_${i}`, scene);
+    markerMat.alpha = 0.5;
+    marker.material = markerMat;
+
     hands.push({
-      mesh: rootNode,
+      mesh: physicsMesh,
       aggregate,
       targetPos: startPos.clone(),
       side,
-      animGroups: instance.animationGroups
+      animGroups: instance.animationGroups,
+      marker
     });
   }
-
-  marker = MeshBuilder.CreateSphere("marker", { diameter: 0.5 }, scene);
-  const markerMat = new StandardMaterial("markerMat", scene);
-  markerMat.diffuseColor = new Color3(0, 1, 0);
-  markerMat.emissiveColor = new Color3(0, 1, 0);
-  markerMat.alpha = 0.5;
-  marker.material = markerMat;
 }
 
 export function getActiveHand() {
@@ -130,16 +148,29 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
     activeHand.targetPos.z = pushZ;
   }
 
-  // Update marker visual
-  marker.position.copyFrom(activeHand.targetPos);
-  if (marker.material) {
-    const mat = marker.material as StandardMaterial;
-    if (activeHandIndex === 0) {
-      mat.diffuseColor = new Color3(0, 1, 0); // Green for right side
-      mat.emissiveColor = new Color3(0, 1, 0);
-    } else {
-      mat.diffuseColor = new Color3(1, 0, 0); // Red for left side
-      mat.emissiveColor = new Color3(1, 0, 0);
+  // Update marker visuals
+  for (let i = 0; i < hands.length; i++) {
+    const hand = hands[i];
+    hand.marker.position.copyFrom(hand.targetPos);
+    
+    if (hand.marker.material) {
+      const mat = hand.marker.material as StandardMaterial;
+      if (i === activeHandIndex) {
+        // Active hand is brightly colored (Green for 0, Red for 1)
+        if (i === 0) {
+          mat.diffuseColor = new Color3(0, 1, 0);
+          mat.emissiveColor = new Color3(0, 1, 0);
+        } else {
+          mat.diffuseColor = new Color3(1, 0, 0);
+          mat.emissiveColor = new Color3(1, 0, 0);
+        }
+        mat.alpha = 0.8;
+      } else {
+        // Inactive hand is grey and ghosted
+        mat.diffuseColor = new Color3(0.5, 0.5, 0.5);
+        mat.emissiveColor = new Color3(0.2, 0.2, 0.2);
+        mat.alpha = 0.3;
+      }
     }
   }
 
@@ -165,8 +196,6 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
 
   // Apply spring force to all hands
   for (const hand of hands) {
-    const isAct = (hand === activeHand);
-    
     // Current state
     const pos = hand.aggregate.transformNode.position;
     const vel = hand.aggregate.body.getLinearVelocity();
@@ -176,19 +205,7 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
     const springForce = diff.scale(config.hands.stiffness);
     const dampingForce = vel.scale(config.hands.damping);
     
-    let force = springForce.subtract(dampingForce);
-    
-    // Cap the force
-    let maxF = config.hands.baseMoveForce;
-    if (isAct) {
-      if (input.r2 > 0.1) maxF += input.r2 * config.hands.maxPushForce;
-      if (input.l2 > 0.1) maxF += input.l2 * config.hands.maxPushForce; // Also need force to pull
-    }
-    
-    if (force.length() > maxF) {
-      force = force.normalize().scale(maxF);
-    }
-    
+    const force = springForce.subtract(dampingForce);
     hand.aggregate.body.applyForce(force, pos);
   }
 
