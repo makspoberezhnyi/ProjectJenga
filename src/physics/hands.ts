@@ -1,4 +1,4 @@
-import { Scene, MeshBuilder, Vector3, PhysicsAggregate, PhysicsShapeType, StandardMaterial, Color3, Physics6DoFConstraint, PhysicsConstraintAxis, Ray } from "@babylonjs/core";
+import { Scene, MeshBuilder, Vector3, PhysicsAggregate, PhysicsShapeType, StandardMaterial, Color3, Color4, Physics6DoFConstraint, PhysicsConstraintAxis, Ray } from "@babylonjs/core";
 import { config } from "../config";
 import { InputState } from "../input/gamepad";
 
@@ -19,20 +19,27 @@ export function initHands(scene: Scene) {
   hands = [];
   
   const handMat = new StandardMaterial("handMat", scene);
-  handMat.diffuseColor = new Color3(0.9, 0.1, 0.1);
-  handMat.emissiveColor = new Color3(0.3, 0, 0);
+  handMat.diffuseColor = new Color3(0.2, 0.5, 1.0); // Blue
+  handMat.emissiveColor = new Color3(0.1, 0.2, 0.4);
+  handMat.alpha = 0.6; // Semi-transparent
 
   // Two hands on opposite sides (Z-axis)
   for (let i = 0; i < 2; i++) {
     const side = i === 0 ? 1 : -1;
-    const mesh = MeshBuilder.CreateSphere(`hand_${i}`, { diameter: 0.8 }, scene);
+    // Box for an "arm" shape
+    const mesh = MeshBuilder.CreateBox(`hand_${i}`, { width: 0.8, height: 0.8, depth: 3 }, scene);
     mesh.material = handMat;
+    
+    // Add cartoony edges
+    mesh.enableEdgesRendering();
+    mesh.edgesWidth = 4.0;
+    mesh.edgesColor = new Color4(0, 0, 0, 1);
     
     // Start position slightly away from the tower
     const startPos = new Vector3(0, 10, side * 6);
     mesh.position.copyFrom(startPos);
     
-    const aggregate = new PhysicsAggregate(mesh, PhysicsShapeType.SPHERE, {
+    const aggregate = new PhysicsAggregate(mesh, PhysicsShapeType.BOX, {
       mass: config.hands.handMass,
       friction: 0.5,
       restitution: 0
@@ -62,23 +69,24 @@ export function getActiveHand() {
   return hands[activeHandIndex];
 }
 
-export function updateHands(scene: Scene, input: InputState, deltaTime: number) {
-  if (hands.length === 0) return;
+export function updateHands(scene: Scene, input: InputState, deltaTime: number): boolean {
+  if (hands.length === 0) return false;
 
+  let switched = false;
   // Switch hand
   if (input.yPressed) {
     activeHandIndex = (activeHandIndex + 1) % hands.length;
     releaseGrip(); // Let go when switching
+    switched = true;
   }
 
   const activeHand = hands[activeHandIndex];
   
   // Move target pos
   const dt = deltaTime / 1000;
-  // Left stick moves X and Y
-  // If active hand is on +Z side (side=1), moving stick right (x>0) moves target +X.
-  // If on -Z side (side=-1), moving stick right should probably move target -X so it feels natural from that side.
-  activeHand.targetPos.x += input.leftStick.x * config.hands.speed * dt * activeHand.side;
+  // Inverting stick X so moving stick right physically moves target right on the screen.
+  // Using activeHand.side so it is correct regardless of which side we are facing.
+  activeHand.targetPos.x += input.leftStick.x * config.hands.speed * dt * -activeHand.side;
   activeHand.targetPos.y -= input.leftStick.y * config.hands.speed * dt;
   
   // Constrain target to tower area
@@ -155,6 +163,8 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number) 
       releaseGrip();
     }
   }
+
+  return switched;
 }
 
 function tryGrip(scene: Scene, hand: Hand) {

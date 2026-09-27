@@ -54,7 +54,22 @@ export async function createScene(canvas: HTMLCanvasElement): Promise<Scene> {
   // Run render loop
   engine.runRenderLoop(() => {
     const state = updateInput();
-    updateHands(scene, state, engine.getDeltaTime());
+    const switched = updateHands(scene, state, engine.getDeltaTime());
+    
+    // Camera rotation with Right Stick
+    camera.alpha += state.rightStick.x * 0.05;
+    camera.beta += state.rightStick.y * 0.05;
+    
+    // Clamp beta to prevent flipping or going below ground
+    camera.beta = Math.max(0.1, Math.min(Math.PI / 2 - 0.1, camera.beta));
+
+    if (switched) {
+      // If we switched hands, flip the camera to the other side instantly
+      // activeHand.side = 1 means +Z (front), side = -1 means -Z (back)
+      // camera.alpha rotates around Y axis. Flipping is adding PI.
+      camera.alpha += Math.PI;
+    }
+
     scene.render();
   });
 
