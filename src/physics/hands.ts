@@ -50,11 +50,12 @@ export async function initHands(scene: Scene) {
     // Attach the visual hand to the rotator
     rootNode.parent = rotatorNode;
     rootNode.scaling = new Vector3(15, 15, 15);
-    // Natively the hand's fingers point UP (+Y) and the palm faces FORWARD (+Z).
-    // We must clear the GLB's native rotationQuaternion and pitch it forward 90 degrees
-    // so the fingers point FORWARD (+Z) and the palm faces DOWN (-Y).
+    // Natively the hand's fingers point DOWN (-Y) and the palm faces FORWARD (+Z).
+    // We must clear the GLB's native rotationQuaternion and apply Euler angles.
+    // X = -90 degrees (-Math.PI/2) pitches fingers to point FORWARD (+Z) and palm UP (+Y).
+    // Z = 180 degrees (Math.PI) rolls the hand to point palm DOWN (-Y).
     rootNode.rotationQuaternion = null;
-    rootNode.rotation = new Vector3(Math.PI / 2, 0, 0);
+    rootNode.rotation = new Vector3(-Math.PI / 2, 0, Math.PI);
     
     // We push the wrist back to -2.5 so the fingertips sit at the physics sphere (0,0,0)
     rootNode.position = new Vector3(0, -0.5, -2.5);
