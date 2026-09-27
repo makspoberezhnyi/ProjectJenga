@@ -33,6 +33,13 @@ export function setupDebugPanel(scene: Scene) {
       scene.debugLayer.hide();
     }
   });
+
+  const handsFolder = gui.addFolder("Hands");
+  handsFolder.add(config.hands, "stiffness", 10, 1000, 10).name("Spring Stiffness");
+  handsFolder.add(config.hands, "damping", 0, 100, 1).name("Damping");
+  handsFolder.add(config.hands, "maxPushForce", 1, 200, 1).name("Max Push Force");
+  handsFolder.add(config.hands, "gripStrength", 10, 500, 10).name("Grip Strength");
+  handsFolder.open();
   
   debugFolder.add(config.debug, "showPhysics").name("Physics Viewer").onChange(async (value: boolean) => {
     // Requires PhysicsViewer from @babylonjs/core/Debug

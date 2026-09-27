@@ -18,5 +18,14 @@ export const config = {
   debug: {
     showInspector: false,
     showPhysics: false
+  },
+  hands: {
+    stiffness: 400,
+    damping: 20,
+    maxPushForce: 20,
+    gripStrength: 100, // Not fully used yet, but good for constraint
+    handMass: 0.1,
+    baseMoveForce: 5,
+    speed: 10 // target move speed
   }
 };

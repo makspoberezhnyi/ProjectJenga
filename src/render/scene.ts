@@ -2,6 +2,8 @@ import { Engine, Scene, ArcRotateCamera, Vector3, HemisphericLight, DirectionalL
 import { initPhysics } from "../physics/world";
 import { buildTower } from "../physics/tower";
 import { config } from "../config";
+import { initHands, updateHands } from "../physics/hands";
+import { updateInput } from "../input/gamepad";
 
 let scene: Scene;
 let engine: Engine;
@@ -46,8 +48,13 @@ export async function createScene(canvas: HTMLCanvasElement): Promise<Scene> {
   // Build Jenga Tower
   buildTower(scene);
 
+  // Initialize Hands
+  initHands(scene);
+
   // Run render loop
   engine.runRenderLoop(() => {
+    const state = updateInput();
+    updateHands(scene, state, engine.getDeltaTime());
     scene.render();
   });
 
