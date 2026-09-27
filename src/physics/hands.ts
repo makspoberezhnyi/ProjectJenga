@@ -128,30 +128,40 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
   // Move target pos
   const dt = deltaTime / 1000;
   
-  // D-Pad Adjusts resting distance (baseZ)
-  // D-Pad Up (-1) moves closer (smaller baseZ). D-Pad Down (1) moves further away (larger baseZ).
-  activeHand.baseZ += input.dpad.y * config.hands.speed * dt;
-  // Clamp baseZ so they can't push it completely into the tower or infinitely far
-  activeHand.baseZ = Math.max(3.5, Math.min(10.0, activeHand.baseZ));
+
   
   if (activeHandIndex === 0) {
     // ---- PUSH HAND (Green marker, R2) ----
+    // Stick and D-Pad move the hand across the tower face (X and Y)
     activeHand.targetPos.x += (input.leftStick.x + input.dpad.x) * config.hands.speed * dt * -activeHand.side;
-    activeHand.targetPos.y -= input.leftStick.y * config.hands.speed * dt;
+    activeHand.targetPos.y -= (input.leftStick.y + input.dpad.y) * config.hands.speed * dt;
     
-    // pushZ starts from baseZ and moves inwards by up to 3 units when R2 is pressed fully
-    const pushZ = activeHand.side * (activeHand.baseZ - 3.0 * input.r2);
+    // R2 proportionally pushes the hand INTO the tower
+    // Rests at 6.5 (away from tower), fully pressed moves to 3.5 (inside tower)
+    const pushZ = activeHand.side * (6.5 - 3.0 * input.r2);
     activeHand.targetPos.z = pushZ;
     
     if (activeConstraint) releaseGrip();
     
   } else {
     // ---- PULL HAND (Red marker, L2) ----
+    // Stick and D-Pad move the hand across the tower face (X and Y)
     activeHand.targetPos.x += (input.leftStick.x + input.dpad.x) * config.hands.speed * dt * -activeHand.side;
-    activeHand.targetPos.y -= input.leftStick.y * config.hands.speed * dt;
-    activeHand.targetPos.z = activeHand.side * activeHand.baseZ;
+    activeHand.targetPos.y -= (input.leftStick.y + input.dpad.y) * config.hands.speed * dt;
     
-    if (input.l2 > 0.1) {
+    // L2 acts as a fluid reach-and-pull mechanism:
+    // 0.0 -> 0.5: Hand reaches INTO the tower (from 6.5 to 3.6)
+    // 0.5 -> 1.0: Hand pulls AWAY from the tower (from 3.6 to 8.6)
+    let pullZ = 6.5;
+    if (input.l2 <= 0.5) {
+      pullZ = 6.5 - (input.l2 / 0.5) * 2.9; // Reach in
+    } else {
+      pullZ = 3.6 + ((input.l2 - 0.5) / 0.5) * 5.0; // Pull out
+    }
+    activeHand.targetPos.z = activeHand.side * pullZ;
+    
+    // Grip when past the halfway point (when it's touching the tower)
+    if (input.l2 > 0.5) {
       if (!activeConstraint) {
         tryGrip(scene, activeHand);
       }
