@@ -25,7 +25,7 @@ export async function createScene(canvas: HTMLCanvasElement): Promise<Scene> {
   // Orbit camera
   const camera = new ArcRotateCamera("camera", Math.PI / 4, Math.PI / 3, 40, new Vector3(0, 15, 0), scene);
   camera.attachControl(canvas, true);
-  camera.wheelPrecision = 50;
+  camera.wheelPrecision = 10; // Lower number means faster zoom
 
   // Initialize Physics
   await initPhysics(scene);

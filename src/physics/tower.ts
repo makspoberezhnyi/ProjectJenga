@@ -11,6 +11,7 @@ export function buildTower(scene: Scene) {
     blockMaterial = new StandardMaterial("blockMat", scene);
     blockMaterial.diffuseColor = new Color3(0.95, 0.65, 0.2); // Vibrant cartoony wood
     blockMaterial.specularColor = new Color3(0.1, 0.1, 0.1); // Reduce shininess for cartoony look
+    blockMaterial.emissiveColor = new Color3(0.2, 0.1, 0.0); // Slight inner glow to pop
   }
 
   const { levels, blocksPerLevel, blockSize, mass } = config.tower;
@@ -36,8 +37,8 @@ export function buildTower(scene: Scene) {
       
       // Add edges rendering so blocks are distinguishable
       block.enableEdgesRendering();
-      block.edgesWidth = 2.0;
-      block.edgesColor = new Color4(0.2, 0.15, 0.1, 1.0);
+      block.edgesWidth = 4.0; // Thicker for bold cartoony look
+      block.edgesColor = new Color4(0, 0, 0, 1.0); // Pure black
       let x = 0;
       let z = 0;
 
