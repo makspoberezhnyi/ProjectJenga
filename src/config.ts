@@ -22,7 +22,7 @@ export const config = {
   hands: {
     stiffness: 400,
     damping: 20,
-    maxPushForce: 20,
+    maxPushForce: 50,
     gripStrength: 100,
     handMass: 0.1,
     baseMoveForce: 5,

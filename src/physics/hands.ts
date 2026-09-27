@@ -137,8 +137,8 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
   
   // 2. D-pad exclusively for Vertical controls (Y)
   // D-pad UP (negative Y) moves the hand UP (positive Y in world)
-  // We use a much slower speed multiplier for the D-pad to make vertical alignment precise.
-  const dpadSpeed = config.hands.speed * 0.3;
+  // Adjusted speed multiplier slightly higher per user request
+  const dpadSpeed = config.hands.speed * 0.5;
   activeHand.targetPos.y -= input.dpad.y * dpadSpeed * dt;
   
   if (activeHandIndex === 0) {
@@ -171,6 +171,14 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
   for (let i = 0; i < hands.length; i++) {
     const hand = hands[i];
     hand.marker.position.copyFrom(hand.aggregate.transformNode.position);
+    
+    if (i === activeHandIndex) {
+      // Active hand has full physics collisions enabled
+      hand.aggregate.shape.filterCollideMask = 0xFFFFFFFF;
+    } else {
+      // Inactive hand has physics collisions disabled ("no physics on it")
+      hand.aggregate.shape.filterCollideMask = 0;
+    }
     
     if (hand.marker.material) {
       const mat = hand.marker.material as StandardMaterial;
