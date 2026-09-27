@@ -1,4 +1,4 @@
-import { Scene, MeshBuilder, Vector3, PhysicsAggregate, PhysicsShapeType, StandardMaterial, Color3, Color4, Physics6DoFConstraint, PhysicsConstraintAxis, Ray } from "@babylonjs/core";
+import { Scene, Mesh, MeshBuilder, Vector3, PhysicsAggregate, PhysicsShapeType, StandardMaterial, Color3, Color4, Physics6DoFConstraint, PhysicsConstraintAxis, Ray } from "@babylonjs/core";
 import { config } from "../config";
 import { InputState } from "../input/gamepad";
 
@@ -15,30 +15,66 @@ let marker: any;
 let activeConstraint: Physics6DoFConstraint | null = null;
 let grabbedBody: any = null;
 
+function createArmMesh(scene: Scene, name: string, side: number, material: StandardMaterial): Mesh {
+  // Forearm
+  const forearm = MeshBuilder.CreateCylinder(name + "_forearm", { diameter: 0.6, height: 3 }, scene);
+  forearm.rotation.x = Math.PI / 2;
+  // Push forearm back so the hand is at z=0
+  forearm.position.z = side * 1.5;
+
+  // Palm
+  const palm = MeshBuilder.CreateBox(name + "_palm", { width: 0.8, height: 0.4, depth: 0.8 }, scene);
+  palm.position.z = side * 0; // Center
+
+  // Thumb
+  const thumb = MeshBuilder.CreateBox(name + "_thumb", { width: 0.3, height: 0.3, depth: 0.6 }, scene);
+  thumb.position.x = 0.5;
+  thumb.position.z = side * -0.2;
+
+  // Fingers
+  const f1 = MeshBuilder.CreateBox(name + "_f1", { width: 0.2, height: 0.2, depth: 0.8 }, scene);
+  f1.position.x = -0.3;
+  f1.position.z = side * -0.6;
+  
+  const f2 = MeshBuilder.CreateBox(name + "_f2", { width: 0.2, height: 0.2, depth: 0.8 }, scene);
+  f2.position.x = 0;
+  f2.position.z = side * -0.6;
+  
+  const f3 = MeshBuilder.CreateBox(name + "_f3", { width: 0.2, height: 0.2, depth: 0.8 }, scene);
+  f3.position.x = 0.3;
+  f3.position.z = side * -0.6;
+
+  const merged = Mesh.MergeMeshes([forearm, palm, thumb, f1, f2, f3], true, true, undefined, false, true) as Mesh;
+  merged.name = name;
+  merged.material = material;
+  
+  merged.enableEdgesRendering();
+  merged.edgesWidth = 3.0;
+  merged.edgesColor = new Color4(0, 0, 0, 1);
+  
+  return merged;
+}
+
 export function initHands(scene: Scene) {
   hands = [];
   
   const handMat = new StandardMaterial("handMat", scene);
   handMat.diffuseColor = new Color3(0.2, 0.5, 1.0); // Blue
   handMat.emissiveColor = new Color3(0.1, 0.2, 0.4);
-  handMat.alpha = 0.6; // Semi-transparent
+  handMat.alpha = 0.8; // Semi-transparent (less transparent to look solid)
 
   // Two hands on opposite sides (Z-axis)
   for (let i = 0; i < 2; i++) {
     const side = i === 0 ? 1 : -1;
-    // Box for an "arm" shape
-    const mesh = MeshBuilder.CreateBox(`hand_${i}`, { width: 0.8, height: 0.8, depth: 3 }, scene);
-    mesh.material = handMat;
     
-    // Add cartoony edges
-    mesh.enableEdgesRendering();
-    mesh.edgesWidth = 4.0;
-    mesh.edgesColor = new Color4(0, 0, 0, 1);
+    // Create cartoony arm
+    const mesh = createArmMesh(scene, `hand_${i}`, side, handMat);
     
     // Start position slightly away from the tower
-    const startPos = new Vector3(0, 10, side * 6);
+    const startPos = new Vector3(0, 10, side * 7);
     mesh.position.copyFrom(startPos);
     
+    // We can use a box shape for the physics of the hand
     const aggregate = new PhysicsAggregate(mesh, PhysicsShapeType.BOX, {
       mass: config.hands.handMass,
       friction: 0.5,
@@ -105,15 +141,8 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
     activeHand.targetPos.y += input.leftStick.y * config.hands.speed * dt; 
   } else {
     // Normal resting Z position
-    // We want the target to just sit right outside the block's face or push into it
-    // Push force R2 moves target slightly inward? Actually R2 just increases force cap.
-    // The design doc says "The push hand is pulled toward its target by a spring force capped by R2".
-    // If target is inside the tower, it pushes.
-    // Let's make target rest at Z = side * 4 (just outside blocks).
-    // When R2 is pressed, maybe we don't move the target, we just let the physical hand push towards it?
-    // Wait, if target is at Z=4, and tower is at Z=3.75, it's outside.
-    // To push, target MUST be inside the tower. Let's move target in when R2 is pressed.
-    const pushZ = activeHand.side * (4.5 - 2.5 * input.r2); // Moves inwards up to 2.5 units
+    // Base is side * 6.5, fully pushed is side * 3.5 (which puts the palm inside the tower to push)
+    const pushZ = activeHand.side * (6.5 - 3.0 * input.r2);
     activeHand.targetPos.z = pushZ;
   }
 

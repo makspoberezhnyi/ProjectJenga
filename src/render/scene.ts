@@ -57,8 +57,8 @@ export async function createScene(canvas: HTMLCanvasElement): Promise<Scene> {
     const switched = updateHands(scene, state, engine.getDeltaTime());
     
     // Camera rotation with Right Stick
-    camera.alpha += state.rightStick.x * 0.05;
-    camera.beta += state.rightStick.y * 0.05;
+    camera.alpha += state.rightStick.x * 0.02;
+    camera.beta += state.rightStick.y * 0.02;
     
     // Clamp beta to prevent flipping or going below ground
     camera.beta = Math.max(0.1, Math.min(Math.PI / 2 - 0.1, camera.beta));
