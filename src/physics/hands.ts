@@ -45,9 +45,12 @@ export async function initHands(scene: Scene) {
     rootNode.parent = physicsMesh;
     rootNode.scaling = new Vector3(15, 15, 15);
     
-    // Adjust visual offset so the "pointing finger" aligns with the physics sphere
-    // These offsets depend on the glb's origin. Assuming we need to push it back and down slightly.
-    rootNode.position = new Vector3(0, -0.5, 0); 
+    // Adjust visual offset so the "pointing finger" aligns with the physics sphere.
+    // The GLB origin is at the wrist. We need to push the visual mesh back
+    // so the fingertips sit perfectly inside the physics sphere.
+    // Since the mesh is scaled by 15, a typical 20cm hand becomes ~3 units long.
+    // We push it back along the Z axis (away from the tower) depending on which side it is.
+    rootNode.position = new Vector3(0, -0.5, side * 2.5); 
     
     // Apply a skin-like color to all sub-meshes
     const skinMat = new StandardMaterial(`skin_${i}`, scene);
