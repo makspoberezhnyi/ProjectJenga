@@ -148,19 +148,14 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
   } else {
     // ---- PULL HAND (Red marker, L2) ----
     activeHand.targetPos.x += (input.leftStick.x + input.dpad.x) * config.hands.speed * dt * -activeHand.side;
+    activeHand.targetPos.y -= input.leftStick.y * config.hands.speed * dt;
+    activeHand.targetPos.z = activeHand.side * activeHand.baseZ;
     
     if (input.l2 > 0.1) {
-      // While holding L2, left stick Y pulls the hand away from the tower (Z axis)
-      activeHand.targetPos.z += input.leftStick.y * config.hands.speed * dt * activeHand.side;
-      
       if (!activeConstraint) {
         tryGrip(scene, activeHand);
       }
     } else {
-      // When not holding L2, left stick Y moves the hand up/down
-      activeHand.targetPos.y -= input.leftStick.y * config.hands.speed * dt;
-      activeHand.targetPos.z = activeHand.side * activeHand.baseZ;
-      
       if (activeConstraint) releaseGrip();
     }
   }
