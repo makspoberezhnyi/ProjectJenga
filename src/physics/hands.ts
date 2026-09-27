@@ -137,7 +137,9 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
   
   // 2. D-pad exclusively for Vertical controls (Y)
   // D-pad UP (negative Y) moves the hand UP (positive Y in world)
-  activeHand.targetPos.y -= input.dpad.y * config.hands.speed * dt;
+  // We use a much slower speed multiplier for the D-pad to make vertical alignment precise.
+  const dpadSpeed = config.hands.speed * 0.3;
+  activeHand.targetPos.y -= input.dpad.y * dpadSpeed * dt;
   
   if (activeHandIndex === 0) {
     // ---- PUSH HAND (Green marker, R2) ----
