@@ -5,6 +5,7 @@ import { config } from "../config";
 import { initHands, updateHands } from "../physics/hands";
 import { updateInput } from "../input/gamepad";
 import { GameState } from "../main";
+import { updateMenuInput } from "../ui/menu";
 
 let scene: Scene;
 let engine: Engine;
@@ -61,6 +62,8 @@ export async function createScene(canvas: HTMLCanvasElement): Promise<Scene> {
       if (switched) {
         camera.alpha += Math.PI;
       }
+    } else {
+      updateMenuInput(state);
     }
     
     // Camera rotation with Right Stick
