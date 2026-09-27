@@ -4,10 +4,11 @@ import { config } from "../config";
 import { InputState } from "../input/gamepad";
 
 export interface Hand {
-  mesh: any;
+  mesh: Mesh;
   aggregate: PhysicsAggregate;
   targetPos: Vector3;
-  side: number; // 1 or -1
+  side: number;
+  animGroups: any[];
 }
 
 let hands: Hand[] = [];
@@ -19,67 +20,63 @@ let grabbedBody: any = null;
 export async function initHands(scene: Scene) {
   hands = [];
   
-  // Load the hand model
-  let leftHandMesh: Mesh;
+  let container: any;
   try {
-    const result = await SceneLoader.ImportMeshAsync("", "/models/", "left_hand.glb", scene);
-    leftHandMesh = result.meshes[0] as Mesh;
-    // Normalize scale and rotation based on the glb
-    leftHandMesh.scaling = new Vector3(8, 8, 8); // Make it sizable
-    // Depending on the model, it might need rotation to point forward
-    leftHandMesh.rotationQuaternion = null;
-    leftHandMesh.rotation = new Vector3(0, Math.PI, 0); 
+    container = await SceneLoader.LoadAssetContainerAsync("/models/", "left_hand.glb", scene);
   } catch (e) {
-    console.error("Could not load hand model, falling back to box", e);
-    leftHandMesh = MeshBuilder.CreateBox("fallbackHand", { width: 1.5, height: 1.5, depth: 3 }, scene);
+    console.error("Could not load hand model", e);
+    return;
   }
-
-  // Remove it from scene to use as a template
-  leftHandMesh.setEnabled(false);
 
   // Two hands on opposite sides (Z-axis)
   for (let i = 0; i < 2; i++) {
     const side = i === 0 ? 1 : -1;
     
-    // Clone the hand template
-    const mesh = leftHandMesh.clone(`hand_${i}`, null) as Mesh;
-    mesh.setEnabled(true);
+    // Instantiate a full independent copy with its own animations and skeleton
+    const instance = container.instantiateModelsToScene();
+    const rootNode = instance.rootNodes[0] as Mesh;
+    rootNode.name = `hand_${i}`;
+    
+    // Scale up
+    rootNode.scaling = new Vector3(12, 12, 12);
     
     // If it's the right hand (side = -1), mirror it
     if (side === -1) {
-      mesh.scaling.x *= -1; // Mirror to make a right hand
-      mesh.rotation.y = 0; // Point to the other direction
+      rootNode.scaling.x *= -1;
+      rootNode.rotation = new Vector3(0, 0, 0); 
+    } else {
+      rootNode.rotation = new Vector3(0, Math.PI, 0); 
     }
     
-    // Start position slightly away from the tower
     const startPos = new Vector3(0, 10, side * 7);
-    mesh.position.copyFrom(startPos);
+    rootNode.position.copyFrom(startPos);
     
-    // Use a box shape for the physics of the hand
-    const aggregate = new PhysicsAggregate(mesh, PhysicsShapeType.BOX, {
+    const aggregate = new PhysicsAggregate(rootNode, PhysicsShapeType.BOX, {
       mass: config.hands.handMass,
       friction: 0.5,
       restitution: 0
     }, scene);
     
-    // Disable gravity for hands so they don't fall
     aggregate.body.setGravityFactor(0);
-    
-    // Lock rotation so it doesn't spin wildly when bumping into things
     aggregate.body.setMassProperties({
       mass: config.hands.handMass,
       inertia: new Vector3(0, 0, 0)
     });
 
+    // Stop all animations initially
+    for (const ag of instance.animationGroups) {
+      ag.stop();
+    }
+
     hands.push({
-      mesh,
+      mesh: rootNode,
       aggregate,
       targetPos: startPos.clone(),
-      side
+      side,
+      animGroups: instance.animationGroups
     });
   }
 
-  // Create target marker
   marker = MeshBuilder.CreateSphere("marker", { diameter: 0.5 }, scene);
   const markerMat = new StandardMaterial("markerMat", scene);
   markerMat.diffuseColor = new Color3(0, 1, 0);
@@ -135,6 +132,36 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
 
   // Update marker visual
   marker.position.copyFrom(activeHand.targetPos);
+  if (marker.material) {
+    const mat = marker.material as StandardMaterial;
+    if (activeHandIndex === 0) {
+      mat.diffuseColor = new Color3(0, 1, 0); // Green for right side
+      mat.emissiveColor = new Color3(0, 1, 0);
+    } else {
+      mat.diffuseColor = new Color3(1, 0, 0); // Red for left side
+      mat.emissiveColor = new Color3(1, 0, 0);
+    }
+  }
+
+  // Handle Animations
+  const gripAnim = activeHand.animGroups.find(ag => ag.name === "Grip");
+  const poseAnim = activeHand.animGroups.find(ag => ag.name === "Pose" || ag.name === "pose");
+  
+  if (input.l2 > 0.1) {
+    if (gripAnim && !gripAnim.isPlaying) {
+      gripAnim.play(true);
+      if (poseAnim) poseAnim.stop();
+    }
+  } else if (input.r2 > 0.1) {
+    if (poseAnim && !poseAnim.isPlaying) {
+      poseAnim.play(true);
+      if (gripAnim) gripAnim.stop();
+    }
+  } else {
+    // Idle
+    if (gripAnim && gripAnim.isPlaying) gripAnim.stop();
+    if (poseAnim && poseAnim.isPlaying) poseAnim.stop();
+  }
 
   // Apply spring force to all hands
   for (const hand of hands) {
