@@ -1,4 +1,4 @@
-import { Scene, MeshBuilder, StandardMaterial, Color3, Vector3, PhysicsAggregate, PhysicsShapeType } from "@babylonjs/core";
+import { Scene, MeshBuilder, StandardMaterial, Color3, Color4, Vector3, PhysicsAggregate, PhysicsShapeType } from "@babylonjs/core";
 import { config } from "../config";
 
 let blocks: any[] = [];
@@ -9,17 +9,21 @@ export function buildTower(scene: Scene) {
 
   if (!blockMaterial) {
     blockMaterial = new StandardMaterial("blockMat", scene);
-    blockMaterial.diffuseColor = new Color3(0.8, 0.6, 0.4);
+    blockMaterial.diffuseColor = new Color3(0.95, 0.65, 0.2); // Vibrant cartoony wood
+    blockMaterial.specularColor = new Color3(0.1, 0.1, 0.1); // Reduce shininess for cartoony look
   }
 
   const { levels, blocksPerLevel, blockSize, mass } = config.tower;
   const { friction, restitution } = config.physics;
 
+  // We add a tiny gap vertically so blocks spawn slightly separated and fall into place,
+  // proving that the physics engine is active and settling them.
+  const dropGap = 0.05;
   const yOffset = blockSize.height / 2;
 
   for (let level = 0; level < levels; level++) {
     const isEven = level % 2 === 0;
-    const y = yOffset + level * blockSize.height;
+    const y = yOffset + level * (blockSize.height + dropGap) + 1.0; // Drop from 1.0 height unit above table
 
     for (let i = 0; i < blocksPerLevel; i++) {
       const block = MeshBuilder.CreateBox(`block_${level}_${i}`, {
@@ -29,7 +33,11 @@ export function buildTower(scene: Scene) {
       }, scene);
       
       block.material = blockMaterial;
-
+      
+      // Add edges rendering so blocks are distinguishable
+      block.enableEdgesRendering();
+      block.edgesWidth = 2.0;
+      block.edgesColor = new Color4(0.2, 0.15, 0.1, 1.0);
       let x = 0;
       let z = 0;
 
