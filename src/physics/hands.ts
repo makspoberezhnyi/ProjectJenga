@@ -10,6 +10,7 @@ export interface Hand {
   side: number;
   animGroups: any[];
   marker: Mesh;
+  baseZ: number;
 }
 
 let hands: Hand[] = [];
@@ -101,7 +102,8 @@ export async function initHands(scene: Scene) {
       targetPos: startPos.clone(),
       side,
       animGroups: instance.animationGroups,
-      marker
+      marker,
+      baseZ: 6.5
     });
   }
 }
@@ -126,19 +128,26 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
   // Move target pos
   const dt = deltaTime / 1000;
   
+  // D-Pad Adjusts resting distance (baseZ)
+  // D-Pad Up (-1) moves closer (smaller baseZ). D-Pad Down (1) moves further away (larger baseZ).
+  activeHand.baseZ += input.dpad.y * config.hands.speed * dt;
+  // Clamp baseZ so they can't push it completely into the tower or infinitely far
+  activeHand.baseZ = Math.max(3.5, Math.min(10.0, activeHand.baseZ));
+  
   if (activeHandIndex === 0) {
     // ---- PUSH HAND (Green marker, R2) ----
-    activeHand.targetPos.x += input.leftStick.x * config.hands.speed * dt * -activeHand.side;
+    activeHand.targetPos.x += (input.leftStick.x + input.dpad.x) * config.hands.speed * dt * -activeHand.side;
     activeHand.targetPos.y -= input.leftStick.y * config.hands.speed * dt;
     
-    const pushZ = activeHand.side * (6.5 - 3.0 * input.r2);
+    // pushZ starts from baseZ and moves inwards by up to 3 units when R2 is pressed fully
+    const pushZ = activeHand.side * (activeHand.baseZ - 3.0 * input.r2);
     activeHand.targetPos.z = pushZ;
     
     if (activeConstraint) releaseGrip();
     
   } else {
     // ---- PULL HAND (Red marker, L2) ----
-    activeHand.targetPos.x += input.leftStick.x * config.hands.speed * dt * -activeHand.side;
+    activeHand.targetPos.x += (input.leftStick.x + input.dpad.x) * config.hands.speed * dt * -activeHand.side;
     
     if (input.l2 > 0.1) {
       // While holding L2, left stick Y pulls the hand away from the tower (Z axis)
@@ -150,7 +159,7 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
     } else {
       // When not holding L2, left stick Y moves the hand up/down
       activeHand.targetPos.y -= input.leftStick.y * config.hands.speed * dt;
-      activeHand.targetPos.z = activeHand.side * 6.5;
+      activeHand.targetPos.z = activeHand.side * activeHand.baseZ;
       
       if (activeConstraint) releaseGrip();
     }
@@ -160,10 +169,11 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
   activeHand.targetPos.y = Math.max(0.5, Math.min(30, activeHand.targetPos.y));
   activeHand.targetPos.x = Math.max(-5, Math.min(5, activeHand.targetPos.x));
 
-  // Update marker visuals
+  // Update marker visuals to strictly follow the physical hand (the physics collision sphere)
+  // This ensures if the hand hits a block, the marker stops too, providing accurate feedback.
   for (let i = 0; i < hands.length; i++) {
     const hand = hands[i];
-    hand.marker.position.copyFrom(hand.targetPos);
+    hand.marker.position.copyFrom(hand.aggregate.transformNode.position);
     
     if (hand.marker.material) {
       const mat = hand.marker.material as StandardMaterial;
@@ -217,23 +227,35 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
 }
 
 function tryGrip(scene: Scene, hand: Hand) {
-  // Raycast from hand to find a block
-  // A simpler way: we just find bodies overlapping or very close to the hand
-  // For now, we will do a small raycast inwards
+  // We do a raycast inwards towards the tower to find a block.
+  // Using a 5.0 unit length to ensure it reaches the tower from the resting distance (6.5).
   const rayStart = hand.mesh.position;
   const rayDir = new Vector3(0, 0, -hand.side);
-  const hit = scene.pickWithRay(new Ray(rayStart, rayDir, 1.5), (mesh) => mesh.name.startsWith("block_"));
+  const hit = scene.pickWithRay(new Ray(rayStart, rayDir, 5.0), (mesh) => mesh.name.startsWith("block_"));
   
   if (hit && hit.hit && hit.pickedMesh && hit.pickedMesh.physicsBody) {
     grabbedBody = hit.pickedMesh.physicsBody;
+    
+    // Convert hand world position to block local space for pivotB
+    const invWorld = hit.pickedMesh.getWorldMatrix().clone().invert();
+    const pivotB = Vector3.TransformCoordinates(hand.mesh.position, invWorld);
+    
+    // Convert world axes to block local space to prevent orientation snapping
+    const axisA = new Vector3(1, 0, 0);
+    const axisB = Vector3.TransformNormal(axisA, invWorld);
+    
+    const perpAxisA = new Vector3(0, 1, 0);
+    const perpAxisB = Vector3.TransformNormal(perpAxisA, invWorld);
     
     // Create constraint
     activeConstraint = new Physics6DoFConstraint(
       {
         pivotA: new Vector3(0, 0, 0),
-        pivotB: hit.pickedMesh.getAbsolutePosition().subtract(hand.mesh.position).scale(-1),
-        perpAxisA: new Vector3(0, 1, 0),
-        perpAxisB: new Vector3(0, 1, 0)
+        pivotB: pivotB,
+        axisA: axisA,
+        axisB: axisB,
+        perpAxisA: perpAxisA,
+        perpAxisB: perpAxisB
       },
       [
         { axis: PhysicsConstraintAxis.LINEAR_X, minLimit: 0, maxLimit: 0 },

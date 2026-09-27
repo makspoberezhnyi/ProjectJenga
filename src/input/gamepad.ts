@@ -1,6 +1,7 @@
 export interface InputState {
   leftStick: { x: number; y: number };
   rightStick: { x: number; y: number };
+  dpad: { x: number; y: number };
   r2: number;
   l2: number;
   yPressed: boolean;
@@ -13,6 +14,7 @@ export interface InputState {
 const state: InputState = {
   leftStick: { x: 0, y: 0 },
   rightStick: { x: 0, y: 0 },
+  dpad: { x: 0, y: 0 },
   r2: 0,
   l2: 0,
   yPressed: false,
@@ -54,6 +56,17 @@ export function updateInput(): InputState {
     // Right stick (axes 2, 3)
     state.rightStick.x = applyDeadzone(gp.axes[2]);
     state.rightStick.y = applyDeadzone(gp.axes[3]);
+
+    // D-Pad (buttons 12: Up, 13: Down, 14: Left, 15: Right)
+    // Map to x (left/right) and y (up/down). Note: up is usually negative y for sticks, but let's make up = positive 1, down = -1 for intuition.
+    // Wait, stick Y: up is -1. Let's match stick behavior: Up = -1, Down = 1.
+    const up = gp.buttons[12]?.pressed ? -1 : 0;
+    const down = gp.buttons[13]?.pressed ? 1 : 0;
+    const left = gp.buttons[14]?.pressed ? -1 : 0;
+    const right = gp.buttons[15]?.pressed ? 1 : 0;
+    
+    state.dpad.x = left + right;
+    state.dpad.y = up + down;
 
     // R2 is button 7, L2 is button 6
     state.r2 = gp.buttons[7]?.value || 0;
