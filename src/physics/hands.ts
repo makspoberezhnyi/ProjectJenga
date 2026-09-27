@@ -1,7 +1,9 @@
-import { Scene, Mesh, MeshBuilder, Vector3, PhysicsAggregate, PhysicsShapeType, StandardMaterial, Color3, Physics6DoFConstraint, PhysicsConstraintAxis, Ray, SceneLoader } from "@babylonjs/core";
+import { Scene, Mesh, MeshBuilder, Vector3, PhysicsAggregate, PhysicsShapeType, StandardMaterial, Color3, Physics6DoFConstraint, PhysicsConstraintAxis, Ray, SceneLoader, TransformNode, ArcRotateCamera } from "@babylonjs/core";
 import "@babylonjs/loaders";
 import { config } from "../config";
 import { InputState } from "../input/gamepad";
+import { nextTurn } from "../ui/gameUi";
+import { GameState } from "../main";
 
 export interface Hand {
   mesh: Mesh;
@@ -10,7 +12,7 @@ export interface Hand {
   side: number;
   animGroups: any[];
   marker: Mesh;
-  baseZ: number;
+  rotator: TransformNode;
 }
 
 let hands: Hand[] = [];
@@ -41,17 +43,17 @@ export async function initHands(scene: Scene) {
     // Create a dummy small sphere for precise physics collision (fingertip size)
     const physicsMesh = MeshBuilder.CreateSphere(`physicsHand_${i}`, { diameter: 0.5 }, scene);
     physicsMesh.isVisible = false;
+    
+    const rotatorNode = new TransformNode(`rotator_${i}`, scene);
+    rotatorNode.parent = physicsMesh;
 
-    // Attach the visual hand to the physics dummy
-    rootNode.parent = physicsMesh;
+    // Attach the visual hand to the rotator
+    rootNode.parent = rotatorNode;
     rootNode.scaling = new Vector3(15, 15, 15);
     
-    // Adjust visual offset so the "pointing finger" aligns with the physics sphere.
-    // The GLB origin is at the wrist. We need to push the visual mesh back
-    // so the fingertips sit perfectly inside the physics sphere.
-    // Since the mesh is scaled by 15, a typical 20cm hand becomes ~3 units long.
-    // We push it back along the Z axis (away from the tower) depending on which side it is.
-    rootNode.position = new Vector3(0, -0.5, side * 2.5); 
+    // Natively the hand points towards +Z. 
+    // We push the wrist back to -2.5 so the fingertips sit at the physics sphere (0,0,0)
+    rootNode.position = new Vector3(0, -0.5, -2.5);
     
     // Apply a skin-like color to all sub-meshes
     const skinMat = new StandardMaterial(`skin_${i}`, scene);
@@ -62,14 +64,12 @@ export async function initHands(scene: Scene) {
       m.material = skinMat;
     });
 
-    // If it's the right hand (side = -1), mirror it visually
+    // If it's the left hand (side = -1), mirror it visually
     if (side === -1) {
       rootNode.scaling.x *= -1;
-      rootNode.rotation = new Vector3(0, 0, 0); 
-    } else {
-      rootNode.rotation = new Vector3(0, Math.PI, 0); 
     }
     
+    // Initial position away from the tower
     const startPos = new Vector3(0, 10, side * 7);
     physicsMesh.position.copyFrom(startPos);
     
@@ -103,7 +103,7 @@ export async function initHands(scene: Scene) {
       side,
       animGroups: instance.animationGroups,
       marker,
-      baseZ: 6.5
+      rotator: rotatorNode
     });
   }
 }
@@ -130,16 +130,28 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
   
 
   
-  // 1. Stick exclusively for Horizontal controls (X and Z)
-  activeHand.targetPos.x += input.leftStick.x * config.hands.speed * dt * -activeHand.side;
-  // Stick UP (negative Y) moves the hand FORWARD (towards the tower)
-  activeHand.targetPos.z += input.leftStick.y * config.hands.speed * dt * activeHand.side;
+  // 1. Stick exclusively for Horizontal controls (Camera relative)
+  const cam = scene.activeCamera as ArcRotateCamera;
+  const forward = cam.getDirection(Vector3.Forward());
+  forward.y = 0;
+  forward.normalize();
+  
+  const right = cam.getDirection(Vector3.Right());
+  right.y = 0;
+  right.normalize();
+
+  // Stick UP (negative leftStick.y) means move FORWARD (towards the tower if camera looks at it)
+  const moveForward = -input.leftStick.y * config.hands.speed * dt;
+  const moveRight = input.leftStick.x * config.hands.speed * dt;
+  
+  activeHand.targetPos.addInPlace(forward.scale(moveForward));
+  activeHand.targetPos.addInPlace(right.scale(moveRight));
   
   // 2. D-pad exclusively for Vertical controls (Y)
   // D-pad UP (negative Y) moves the hand UP (positive Y in world)
-  // Adjusted speed multiplier slightly higher per user request
   const dpadSpeed = config.hands.speed * 0.5;
   activeHand.targetPos.y -= input.dpad.y * dpadSpeed * dt;
+
   
   if (activeHandIndex === 0) {
     // ---- PUSH HAND (Green marker, R2) ----
@@ -196,6 +208,19 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
         mat.emissiveColor = new Color3(0.2, 0.2, 0.2);
         mat.alpha = 0.3;
       }
+    }
+    
+    // Auto-targeting: Empty hands always point their fingers at the tower
+    const isHoldingBlock = (i === activeHandIndex && activeConstraint !== null);
+    if (!isHoldingBlock) {
+      // Look at the tower center (0, y, 0)
+      // Since fingertips are pushed to -2.5 and +Z points outward natively,
+      // setting lookAt to the tower will perfectly aim the fingers at the tower!
+      const towerCenter = new Vector3(0, hand.aggregate.transformNode.position.y, 0);
+      hand.rotator.lookAt(towerCenter);
+    } else {
+      // If holding a block, it just maintains its world rotation from when it was grabbed.
+      // (The constraint locks it to the dummy sphere which doesn't rotate).
     }
   }
 
@@ -280,8 +305,18 @@ function tryGrip(scene: Scene, hand: Hand) {
 function releaseGrip() {
   if (activeConstraint && grabbedBody) {
     // Remove constraint
-    // In Havok/Babylon physics V2, disposing the constraint removes it
     activeConstraint.dispose();
+    
+    // Check if the block was placed on top of the tower
+    if (grabbedBody.transformNode) {
+      const blockPos = grabbedBody.transformNode.getAbsolutePosition();
+      // If the block is dropped significantly higher than the initial tower height
+      // The initial tower is 18 levels * 1.5 height + some gap = roughly 28 units high.
+      // Let's say if y > 25, it was placed on top (or at least dropped from above).
+      if (blockPos.y > 25) {
+        nextTurn(GameState.isMultiplayer);
+      }
+    }
   }
   activeConstraint = null;
   grabbedBody = null;

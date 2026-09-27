@@ -4,6 +4,7 @@ import { buildTower } from "../physics/tower";
 import { config } from "../config";
 import { initHands, updateHands } from "../physics/hands";
 import { updateInput } from "../input/gamepad";
+import { GameState } from "../main";
 
 let scene: Scene;
 let engine: Engine;
@@ -54,7 +55,14 @@ export async function createScene(canvas: HTMLCanvasElement): Promise<Scene> {
   // Run render loop
   engine.runRenderLoop(() => {
     const state = updateInput();
-    const switched = updateHands(scene, state, engine.getDeltaTime());
+    
+    if (GameState.isPlaying) {
+      const switched = updateHands(scene, state, engine.getDeltaTime());
+      
+      if (switched) {
+        camera.alpha += Math.PI;
+      }
+    }
     
     // Camera rotation with Right Stick
     camera.alpha += state.rightStick.x * 0.02;
@@ -63,12 +71,7 @@ export async function createScene(canvas: HTMLCanvasElement): Promise<Scene> {
     // Clamp beta to prevent flipping or going below ground
     camera.beta = Math.max(0.1, Math.min(Math.PI / 2 - 0.1, camera.beta));
 
-    if (switched) {
-      // If we switched hands, flip the camera to the other side instantly
-      // activeHand.side = 1 means +Z (front), side = -1 means -Z (back)
-      // camera.alpha rotates around Y axis. Flipping is adding PI.
-      camera.alpha += Math.PI;
-    }
+
 
     scene.render();
   });
