@@ -130,38 +130,27 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
   
 
   
+  // 1. Stick exclusively for Horizontal controls (X and Z)
+  activeHand.targetPos.x += input.leftStick.x * config.hands.speed * dt * -activeHand.side;
+  // Stick UP (negative Y) moves the hand FORWARD (towards the tower)
+  activeHand.targetPos.z += input.leftStick.y * config.hands.speed * dt * activeHand.side;
+  
+  // 2. D-pad exclusively for Vertical controls (Y)
+  // D-pad UP (negative Y) moves the hand UP (positive Y in world)
+  activeHand.targetPos.y -= input.dpad.y * config.hands.speed * dt;
+  
   if (activeHandIndex === 0) {
     // ---- PUSH HAND (Green marker, R2) ----
-    // Stick and D-Pad move the hand across the tower face (X and Y)
-    activeHand.targetPos.x += (input.leftStick.x + input.dpad.x) * config.hands.speed * dt * -activeHand.side;
-    activeHand.targetPos.y -= (input.leftStick.y + input.dpad.y) * config.hands.speed * dt;
-    
-    // R2 proportionally pushes the hand INTO the tower
-    // Rests at 6.5 (away from tower), fully pressed moves to 3.5 (inside tower)
-    const pushZ = activeHand.side * (6.5 - 3.0 * input.r2);
-    activeHand.targetPos.z = pushZ;
-    
+    // R2 can still be used for a quick lunge forward if desired
+    if (input.r2 > 0.1) {
+      activeHand.targetPos.z -= 5.0 * input.r2 * config.hands.speed * dt * activeHand.side;
+    }
     if (activeConstraint) releaseGrip();
     
   } else {
     // ---- PULL HAND (Red marker, L2) ----
-    // Stick and D-Pad move the hand across the tower face (X and Y)
-    activeHand.targetPos.x += (input.leftStick.x + input.dpad.x) * config.hands.speed * dt * -activeHand.side;
-    activeHand.targetPos.y -= (input.leftStick.y + input.dpad.y) * config.hands.speed * dt;
-    
-    // L2 acts as a fluid reach-and-pull mechanism:
-    // 0.0 -> 0.5: Hand reaches INTO the tower (from 6.5 to 3.6)
-    // 0.5 -> 1.0: Hand pulls AWAY from the tower (from 3.6 to 8.6)
-    let pullZ = 6.5;
-    if (input.l2 <= 0.5) {
-      pullZ = 6.5 - (input.l2 / 0.5) * 2.9; // Reach in
-    } else {
-      pullZ = 3.6 + ((input.l2 - 0.5) / 0.5) * 5.0; // Pull out
-    }
-    activeHand.targetPos.z = activeHand.side * pullZ;
-    
-    // Grip when past the halfway point (when it's touching the tower)
-    if (input.l2 > 0.5) {
+    // L2 acts purely as a GRIP toggle while free roaming
+    if (input.l2 > 0.1) {
       if (!activeConstraint) {
         tryGrip(scene, activeHand);
       }
@@ -170,9 +159,10 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
     }
   }
   
-  // Constrain target to tower area
-  activeHand.targetPos.y = Math.max(0.5, Math.min(30, activeHand.targetPos.y));
-  activeHand.targetPos.x = Math.max(-5, Math.min(5, activeHand.targetPos.x));
+  // Give them the WHOLE ROOM: Relax the boundaries significantly!
+  activeHand.targetPos.y = Math.max(0.5, Math.min(50, activeHand.targetPos.y)); // Can fly way above tower
+  activeHand.targetPos.x = Math.max(-20, Math.min(20, activeHand.targetPos.x)); // Whole table width
+  activeHand.targetPos.z = Math.max(-20, Math.min(20, activeHand.targetPos.z)); // Whole table depth
 
   // Update marker visuals to strictly follow the physical hand (the physics collision sphere)
   // This ensures if the hand hits a block, the marker stops too, providing accurate feedback.
