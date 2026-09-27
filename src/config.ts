@@ -21,11 +21,11 @@ export const config = {
   },
   hands: {
     stiffness: 400,
-    damping: 40, // Critically damped for mass 1.0
-    maxPushForce: 50, // (No longer used directly but kept for slider)
+    damping: 20,
+    maxPushForce: 20,
     gripStrength: 100,
-    handMass: 1.0,
-    baseMoveForce: 20, // (No longer used)
-    speed: 15
+    handMass: 0.1,
+    baseMoveForce: 5,
+    speed: 10
   }
 };

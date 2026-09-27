@@ -122,31 +122,40 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
   
   // Move target pos
   const dt = deltaTime / 1000;
-  // Inverting stick X so moving stick right physically moves target right on the screen.
-  // Using activeHand.side so it is correct regardless of which side we are facing.
-  activeHand.targetPos.x += input.leftStick.x * config.hands.speed * dt * -activeHand.side;
-  activeHand.targetPos.y -= input.leftStick.y * config.hands.speed * dt;
+  
+  if (activeHandIndex === 0) {
+    // ---- PUSH HAND (Green marker, R2) ----
+    activeHand.targetPos.x += input.leftStick.x * config.hands.speed * dt * -activeHand.side;
+    activeHand.targetPos.y -= input.leftStick.y * config.hands.speed * dt;
+    
+    const pushZ = activeHand.side * (6.5 - 3.0 * input.r2);
+    activeHand.targetPos.z = pushZ;
+    
+    if (activeConstraint) releaseGrip();
+    
+  } else {
+    // ---- PULL HAND (Red marker, L2) ----
+    activeHand.targetPos.x += input.leftStick.x * config.hands.speed * dt * -activeHand.side;
+    
+    if (input.l2 > 0.1) {
+      // While holding L2, left stick Y pulls the hand away from the tower (Z axis)
+      activeHand.targetPos.z += input.leftStick.y * config.hands.speed * dt * activeHand.side;
+      
+      if (!activeConstraint) {
+        tryGrip(scene, activeHand);
+      }
+    } else {
+      // When not holding L2, left stick Y moves the hand up/down
+      activeHand.targetPos.y -= input.leftStick.y * config.hands.speed * dt;
+      activeHand.targetPos.z = activeHand.side * 6.5;
+      
+      if (activeConstraint) releaseGrip();
+    }
+  }
   
   // Constrain target to tower area
   activeHand.targetPos.y = Math.max(0.5, Math.min(30, activeHand.targetPos.y));
   activeHand.targetPos.x = Math.max(-5, Math.min(5, activeHand.targetPos.x));
-  
-  // Also push/pull target along Z when gripping/pushing to allow movement in/out
-  // But left stick while gripping pulls the block out!
-  if (input.l2 > 0.1) {
-    // Pulling out (move target Z away from tower)
-    // stick Y moves Z now? Or stick X? Design says: "Left stick while gripping: Pull the block out"
-    // So stick Y usually means up/down, let's use stick Y to pull out/push in.
-    // Down stick (y > 0) pulls toward player.
-    activeHand.targetPos.z += input.leftStick.y * config.hands.speed * dt * activeHand.side;
-    // We already applied stick Y to targetPos.y, let's undo it if gripping
-    activeHand.targetPos.y += input.leftStick.y * config.hands.speed * dt; 
-  } else {
-    // Normal resting Z position
-    // Base is side * 6.5, fully pushed is side * 3.5 (which puts the palm inside the tower to push)
-    const pushZ = activeHand.side * (6.5 - 3.0 * input.r2);
-    activeHand.targetPos.z = pushZ;
-  }
 
   // Update marker visuals
   for (let i = 0; i < hands.length; i++) {
@@ -156,17 +165,15 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
     if (hand.marker.material) {
       const mat = hand.marker.material as StandardMaterial;
       if (i === activeHandIndex) {
-        // Active hand is brightly colored (Green for 0, Red for 1)
         if (i === 0) {
-          mat.diffuseColor = new Color3(0, 1, 0);
+          mat.diffuseColor = new Color3(0, 1, 0); // Green = Push
           mat.emissiveColor = new Color3(0, 1, 0);
         } else {
-          mat.diffuseColor = new Color3(1, 0, 0);
+          mat.diffuseColor = new Color3(1, 0, 0); // Red = Pull
           mat.emissiveColor = new Color3(1, 0, 0);
         }
         mat.alpha = 0.8;
       } else {
-        // Inactive hand is grey and ghosted
         mat.diffuseColor = new Color3(0.5, 0.5, 0.5);
         mat.emissiveColor = new Color3(0.2, 0.2, 0.2);
         mat.alpha = 0.3;
@@ -174,28 +181,10 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
     }
   }
 
-  // Handle Animations
-  const gripAnim = activeHand.animGroups.find(ag => ag.name === "Grip");
-  const poseAnim = activeHand.animGroups.find(ag => ag.name === "Pose" || ag.name === "pose");
-  
-  if (input.l2 > 0.1) {
-    if (gripAnim && !gripAnim.isPlaying) {
-      gripAnim.play(true);
-      if (poseAnim) poseAnim.stop();
-    }
-  } else if (input.r2 > 0.1) {
-    if (poseAnim && !poseAnim.isPlaying) {
-      poseAnim.play(true);
-      if (gripAnim) gripAnim.stop();
-    }
-  } else {
-    // Idle
-    if (gripAnim && gripAnim.isPlaying) gripAnim.stop();
-    if (poseAnim && poseAnim.isPlaying) poseAnim.stop();
-  }
-
   // Apply spring force to all hands
   for (const hand of hands) {
+    const isAct = (hand === activeHand);
+    
     // Current state
     const pos = hand.aggregate.transformNode.position;
     const vel = hand.aggregate.body.getLinearVelocity();
@@ -205,23 +194,20 @@ export function updateHands(scene: Scene, input: InputState, deltaTime: number):
     const springForce = diff.scale(config.hands.stiffness);
     const dampingForce = vel.scale(config.hands.damping);
     
-    const force = springForce.subtract(dampingForce);
+    let force = springForce.subtract(dampingForce);
+    
+    // Cap the force
+    let maxF = config.hands.baseMoveForce;
+    if (isAct) {
+      if (input.r2 > 0.1 && activeHandIndex === 0) maxF += input.r2 * config.hands.maxPushForce;
+      if (input.l2 > 0.1 && activeHandIndex === 1) maxF += input.l2 * config.hands.maxPushForce;
+    }
+    
+    if (force.length() > maxF) {
+      force = force.normalize().scale(maxF);
+    }
+    
     hand.aggregate.body.applyForce(force, pos);
-  }
-
-  // Handle Grip (L2)
-  if (input.l2 > 0.1) {
-    if (!activeConstraint) {
-      // Try to grip something
-      tryGrip(scene, activeHand);
-    } else {
-      // Update grip strength? We could update constraint max friction/force here if Havok allows.
-    }
-  } else {
-    // Release
-    if (activeConstraint || input.bPressed) {
-      releaseGrip();
-    }
   }
 
   return switched;
