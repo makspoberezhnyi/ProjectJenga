@@ -52,6 +52,10 @@ export async function initHands(scene: Scene) {
     rootNode.scaling = new Vector3(15, 15, 15);
     
     // Natively the hand points towards +Z. 
+    // We must clear the GLB's native rotationQuaternion to fix the 90-degree pitch
+    rootNode.rotationQuaternion = null;
+    rootNode.rotation = new Vector3(0, 0, 0);
+    
     // We push the wrist back to -2.5 so the fingertips sit at the physics sphere (0,0,0)
     rootNode.position = new Vector3(0, -0.5, -2.5);
     
